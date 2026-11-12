@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แปลภาษา</title>
+<meta name="theme-color" content="#2563eb">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<style>
+  :root {
+    --bg: #f4f6fb; --card: #ffffff; --text: #1a1f2e; --muted: #6b7280;
+    --border: #dde2ec; --accent: #2563eb; --accent-text: #ffffff; --soft: #eef3ff;
+    --error: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1420; --card: #1a2030; --text: #e8ecf4; --muted: #9aa3b5;
+      --border: #2c3447; --accent: #5b8cff; --accent-text: #0f1420; --soft: #222b40;
+      --error: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Noto Sans", sans-serif;
+    font-size: 17px; line-height: 1.5;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 1.5rem; margin: 4px 0 16px; }
+  .langs { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+  select {
+    flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+  }
+  button {
+    font: inherit; cursor: pointer; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); padding: 10px 14px;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .swap { flex: none; width: 48px; font-size: 1.2rem; padding: 10px 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 12px; margin-bottom: 12px;
+  }
+  textarea {
+    width: 100%; min-height: 130px; resize: vertical; border: none; outline: none;
+    background: transparent; color: var(--text); font: inherit; font-size: 1.15rem;
+  }
+  .out { min-height: 130px; font-size: 1.15rem; white-space: pre-wrap; word-break: break-word; }
+  .out.placeholder { color: var(--muted); }
+  .row { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 8px; }
+  .primary {
+    width: 100%; background: var(--accent); color: var(--accent-text); border: none;
+    font-weight: 600; padding: 14px; margin-bottom: 12px; font-size: 1.05rem;
+  }
+  .status { color: var(--muted); font-size: .9rem; min-height: 1.4em; margin: 0 4px 8px; }
+  .status.error { color: var(--error); }
+  .count { color: var(--muted); font-size: .85rem; margin-right: auto; align-self: center; }
+  h2 { font-size: 1.2rem; margin: 28px 0 6px; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
+  .convo-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .convo-controls select { grid-column: 1 / -1; }
+  .big { font-weight: 600; padding: 16px 10px; }
+  .listening { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .live { min-height: 1.5em; color: var(--muted); font-style: italic; margin: 4px 4px 10px; }
+  .log { display: flex; flex-direction: column; gap: 8px; }
+  .entry { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
+  .entry.me { background: var(--soft); }
+  .entry .who { font-size: .8rem; color: var(--muted); }
+  .entry .orig { color: var(--muted); }
+  .entry .tr { font-size: 1.2rem; }
+  .showbig {
+    position: fixed; inset: 0; background: var(--card); color: var(--text); display: none;
+    flex-direction: column; justify-content: center; align-items: center; padding: 24px 16px;
+    text-align: center; font-size: 2rem; line-height: 1.4; z-index: 10; word-break: break-word;
+  }
+  .showbig.open { display: flex; }
+  .showbig small { font-size: 1rem; color: var(--muted); margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>แปลภาษา</h1>
+
+  <div class="langs">
+    <select id="from" aria-label="ภาษาต้นทาง"></select>
+    <button class="swap" id="swap" title="สลับภาษา" aria-label="สลับภาษา">⇄</button>
+    <select id="to" aria-label="ภาษาปลายทาง"></select>
+  </div>
+
+  <div class="card">
+    <textarea id="input" placeholder="พิมพ์ข้อความที่นี่..." maxlength="2000"></textarea>
+    <div class="row">
+      <span class="count" id="count">0 / 2000</span>
+      <button id="clear">ล้าง</button>
+      <button id="speakIn" title="ฟังเสียงข้อความต้นฉบับ">🔊 ฟัง</button>
+    </div>
+  </div>
+
+  <button class="primary" id="go">แปล</button>
+  <div class="status" id="status"></div>
+
+  <div class="card">
+    <div class="out placeholder" id="output">คำแปลจะแสดงที่นี่</div>
+    <div class="row">
+      <button id="copy" disabled>📋 คัดลอก</button>
+      <button id="speakOut" disabled title="ฟังเสียงคำแปล">🔊 ฟังคำแปล</button>
+    </div>
+  </div>
+
+  <h2>โหมดสนทนา</h2>
+  <p class="hint">วางมือถือหันไมค์ไปทางคู่สนทนา ใส่หูฟังบลูทูธ แล้วกด "เริ่มฟัง" แอพจะฟังต่อเนื่อง แปลเป็นไทย และอ่านออกเสียงเข้าหูฟังให้อัตโนมัติ</p>
+  <div class="convo-controls">
+    <select id="otherLang" aria-label="ภาษาคู่สนทนา"></select>
+    <button class="big" id="listenBtn">▶ เริ่มฟัง</button>
+    <button class="big" id="meBtn">🎤 ฉันพูด (ไทย)</button>
+  </div>
+  <div class="live" id="live"></div>
+  <div class="log" id="log"></div>
+</main>
+<div class="showbig" id="showbig" role="dialog"><div id="showbigText"></div><small>แตะเพื่อปิด</small></div>
+
+<script>
+const LANGS = {
+  th: { name: "ไทย", google: "th", mm: "th-TH", voice: "th-TH" },
+  en: { name: "อังกฤษ", google: "en", mm: "en-GB", voice: "en-US" },
+  zh: { name: "จีน", google: "zh-CN", mm: "zh-CN", voice: "zh-CN" },
+  ja: { name: "ญี่ปุ่น", google: "ja", mm: "ja-JP", voice: "ja-JP" },
+};
+
+const $ = (id) => document.getElementById(id);
+const fromSel = $("from"), toSel = $("to"), input = $("input"), output = $("output");
+let lastResult = "";
+
+function store(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+
+for (const [code, l] of Object.entries(LANGS)) {
+  fromSel.add(new Option(l.name, code));
+  toSel.add(new Option(l.name, code));
+}
+fromSel.value = LANGS[load("from")] ? load("from") : "th";
+toSel.value = LANGS[load("to")] ? load("to") : "en";
+
+// Only Thai <-> other pairs: if neither side is Thai, set the other side to Thai.
+function fixPair(changed) {
+  const other = changed === fromSel ? toSel : fromSel;
+  if (changed.value === other.value || (changed.value !== "th" && other.value !== "th")) {
+    other.value = changed.value === "th" ? "en" : "th";
+  }
+  store("from", fromSel.value); store("to", toSel.value);
+}
+fromSel.onchange = () => { fixPair(fromSel); translate(); };
+toSel.onchange = () => { fixPair(toSel); translate(); };
+
+$("swap").onclick = () => {
+  [fromSel.value, toSel.value] = [toSel.value, fromSel.value];
+  store("from", fromSel.value); store("to", toSel.value);
+  if (lastResult) { input.value = lastResult; updateCount(); }
+  translate();
+};
+
+function setStatus(msg, isError) {
+  $("status").textContent = msg || "";
+  $("status").classList.toggle("error", !!isError);
+}
+function showOutput(text) {
+  lastResult = text;
+  output.textContent = text || "คำแปลจะแสดงที่นี่";
+  output.classList.toggle("placeholder", !text);
+  $("copy").disabled = $("speakOut").disabled = !text;
+}
+
+async function viaGoogle(text, from, to) {
+  const url = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t"
+    + "&sl=" + LANGS[from].google + "&tl=" + LANGS[to].google + "&q=" + encodeURIComponent(text);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("google " + res.status);
+  const data = await res.json();
+  return data[0].map((part) => part[0]).join("");
+}
+async function viaMyMemory(text, from, to) {
+  const url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(text)
+    + "&langpair=" + LANGS[from].mm + "|" + LANGS[to].mm;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.responseStatus != 200) throw new Error("mymemory " + data.responseStatus);
+  return data.responseData.translatedText;
+}
+
+async function translateText(text, from, to) {
+  try { return await viaGoogle(text, from, to); }
+  catch (e) { return await viaMyMemory(text, from, to); }
+}
+
+let requestId = 0;
+async function translate() {
+  const text = input.value.trim();
+  if (!text) { showOutput(""); setStatus(""); return; }
+  const id = ++requestId;
+  const from = fromSel.value, to = toSel.value;
+  setStatus("กำลังแปล...");
+  $("go").disabled = true;
+  try {
+    const result = await translateText(text, from, to);
+    if (id !== requestId) return;
+    showOutput(result);
+    setStatus("");
+  } catch (e) {
+    if (id !== requestId) return;
+    setStatus("แปลไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง", true);
+  } finally {
+    if (id === requestId) $("go").disabled = false;
+  }
+}
+
+// Text to speech.
+// 1st choice: Google's free voice as an audio file (works the same on every phone, no voice install needed).
+// Fallback: the voices built into the device/browser.
+const player = new Audio();
+let speakToken = 0;
+let stopCurrent = null;
+
+function splitText(text, max) {
+  const parts = [];
+  let rest = text.replace(/\s+/g, " ").trim();
+  while (rest.length > max) {
+    let cut = -1;
+    for (const ch of ["。", "．", ".", "！", "!", "？", "?", "，", ",", "、", " "]) {
+      cut = Math.max(cut, rest.lastIndexOf(ch, max - 1));
+    }
+    if (cut < max / 3) cut = max - 1;
+    parts.push(rest.slice(0, cut + 1).trim());
+    rest = rest.slice(cut + 1).trim();
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
+
+function speakWithGoogle(text, lang, token) {
+  return new Promise((resolve, reject) => {
+    const parts = splitText(text, 180);
+    let i = 0, started = false;
+    stopCurrent = resolve;
+    const next = () => {
+      if (token !== speakToken) return resolve();
+      if (i >= parts.length) { setStatus(""); return resolve(); }
+      player.src = "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob"
+        + "&tl=" + LANGS[lang].google + "&q=" + encodeURIComponent(parts[i++]);
+      player.play().then(() => { started = true; }).catch((e) => { if (!started) reject(e); });
+    };
+    player.onended = next;
+    player.onerror = () => { if (!started) reject(new Error("audio")); else next(); };
+    next();
+  });
+}
+
+function speakWithDevice(text, lang) {
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) { setStatus("เครื่องนี้อ่านออกเสียงไม่ได้", true); return resolve(); }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const tag = LANGS[lang].voice;
+    u.lang = tag;
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find((v) => v.lang.replace("_", "-") === tag)
+      || voices.find((v) => v.lang.toLowerCase().startsWith(lang));
+    if (voice) u.voice = voice;
+    u.rate = 0.95;
+    u.onstart = () => setStatus("");
+    u.onend = () => resolve();
+    u.onerror = () => {
+      setStatus("เครื่องนี้อาจไม่มีเสียงภาษา" + LANGS[lang].name + " ลองติดตั้งเสียงในการตั้งค่าเครื่อง", true);
+      resolve();
+    };
+    // Android Chrome sometimes drops speech that starts right after cancel(), so wait a moment.
+    setTimeout(() => speechSynthesis.speak(u), 100);
+    // Safety net: never wait forever.
+    setTimeout(resolve, 4000 + text.length * 250);
+  });
+}
+
+async function speak(text, lang, quiet) {
+  if (!text) { setStatus("พิมพ์ข้อความก่อน แล้วกดฟังอีกครั้ง", true); return; }
+  const token = ++speakToken;
+  if (stopCurrent) { stopCurrent(); stopCurrent = null; }
+  player.pause();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  if (!quiet) setStatus("กำลังเล่นเสียง... (ถ้าไม่ได้ยิน ตรวจว่าเครื่องไม่ได้ปิดเสียงอยู่)");
+  try {
+    await speakWithGoogle(text, lang, token);
+  } catch (e) {
+    if (token === speakToken) await speakWithDevice(text, lang);
+  }
+}
+if ("speechSynthesis" in window) {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+}
+
+$("speakIn").onclick = () => speak(input.value.trim(), fromSel.value);
+$("speakOut").onclick = () => speak(lastResult, toSel.value);
+$("go").onclick = translate;
+$("clear").onclick = () => { input.value = ""; updateCount(); showOutput(""); setStatus(""); input.focus(); };
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(lastResult); setStatus("คัดลอกแล้ว"); }
+  catch (e) { setStatus("คัดลอกไม่สำเร็จ", true); }
+};
+
+function updateCount() { $("count").textContent = input.value.length + " / 2000"; }
+let typingTimer;
+input.addEventListener("input", () => {
+  updateCount();
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(translate, 700); // translate automatically after typing stops
+});
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); translate(); }
+});
+
+// ---------- Conversation mode ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const REC_LANG = { th: "th-TH", en: "en-US", zh: "zh-CN", ja: "ja-JP" };
+const otherSel = $("otherLang"), listenBtn = $("listenBtn"), meBtn = $("meBtn"), live = $("live");
+for (const code of ["en", "zh", "ja"]) otherSel.add(new Option("คู่สนทนาพูดภาษา" + LANGS[code].name, code));
+otherSel.value = ["en", "zh", "ja"].includes(load("other")) ? load("other") : "en";
+otherSel.onchange = () => { store("other", otherSel.value); if (autoOn) restartRec(); };
+
+let autoOn = false;      // continuous listening to the other person
+let meMode = false;      // currently recording my Thai speech
+let busy = false;        // translating/speaking; mic paused so it doesn't hear our own voice
+let rec = null;
+const queue = [];
+
+function setLive(t) { live.textContent = t || ""; }
+
+function addEntry(isMe, orig, tr) {
+  const div = document.createElement("div");
+  div.className = "entry" + (isMe ? " me" : "");
+  const who = document.createElement("div"); who.className = "who";
+  who.textContent = isMe ? "ฉัน" : "คู่สนทนา";
+  const o = document.createElement("div"); o.className = "orig"; o.textContent = orig;
+  const t = document.createElement("div"); t.className = "tr"; t.textContent = tr;
+  div.append(who, o, t);
+  div.onclick = () => speak(tr, isMe ? otherSel.value : "th", true);
+  $("log").prepend(div);
+}
+
+function showBig(text) { $("showbigText").textContent = text; $("showbig").classList.add("open"); }
+$("showbig").onclick = () => $("showbig").classList.remove("open");
+
+function stopRec() {
+  if (rec) { rec.onend = null; rec.onresult = null; rec.onerror = null; try { rec.abort(); } catch (e) {} rec = null; }
+}
+
+function startRec() {
+  stopRec();
+  if (busy || (!autoOn && !meMode)) return;
+  const r = new SR();
+  const lang = meMode ? "th" : otherSel.value;
+  r.lang = REC_LANG[lang];
+  r.continuous = !meMode;
+  r.interimResults = true;
+  r.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const res = e.results[i];
+      if (res.isFinal) { const t = res[0].transcript.trim(); if (t) queue.push({ text: t, lang, isMe: meMode }); }
+      else interim += res[0].transcript;
+    }
+    setLive(interim ? "กำลังฟัง: " + interim : "");
+    if (queue.length) processQueue();
+  };
+  r.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      autoOn = false; meMode = false; updateButtons();
+      setLive("แอพยังไม่ได้รับอนุญาตให้ใช้ไมค์ กดอนุญาตไมค์ในเบราว์เซอร์ แล้วลองใหม่");
+    }
+  };
+  r.onend = () => {
+    rec = null;
+    if (meMode && !queue.length && !busy) { meMode = false; updateButtons(); setLive(""); }
+    // Phones stop listening after a pause; start again automatically.
+    if (!busy && (autoOn || meMode)) setTimeout(startRec, 250);
+  };
+  rec = r;
+  try { r.start(); setLive(meMode ? "พูดภาษาไทยได้เลย..." : "กำลังฟังคู่สนทนา..."); }
+  catch (e) { rec = null; }
+}
+function restartRec() { stopRec(); startRec(); }
+
+async function processQueue() {
+  if (busy) return;
+  busy = true;
+  stopRec();
+  while (queue.length) {
+    const item = queue.shift();
+    const to = item.isMe ? otherSel.value : "th";
+    setLive("กำลังแปล...");
+    try {
+      const tr = await translateText(item.text, item.lang, to);
+      addEntry(item.isMe, item.text, tr);
+      if (item.isMe) { showBig(tr); meMode = false; updateButtons(); }
+      setLive("กำลังพูดคำแปล...");
+      await speak(tr, to, true);
+    } catch (e) {
+      if (item.isMe) { meMode = false; updateButtons(); }
+      setLive("แปลไม่สำเร็จ ตรวจสอบอินเทอร์เน็ต");
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  busy = false;
+  setLive("");
+  startRec();
+}
+
+function updateButtons() {
+  listenBtn.textContent = autoOn ? "⏸ หยุดฟัง" : "▶ เริ่มฟัง";
+  listenBtn.classList.toggle("listening", autoOn);
+  meBtn.classList.toggle("listening", meMode);
+  meBtn.textContent = meMode ? "🎤 กำลังฟังคุณ..." : "🎤 ฉันพูด (ไทย)";
+}
+
+if (!SR) {
+  listenBtn.disabled = meBtn.disabled = true;
+  setLive("เบราว์เซอร์นี้ฟังเสียงไม่ได้ กรุณาเปิดด้วย Google Chrome");
+}
+listenBtn.onclick = () => {
+  autoOn = !autoOn; meMode = false;
+  updateButtons();
+  if (autoOn) startRec(); else { stopRec(); setLive(""); }
+};
+meBtn.onclick = () => {
+  meMode = !meMode;
+  updateButtons();
+  if (busy) return;
+  restartRec();
+  if (!meMode && !autoOn) setLive("");
+};
+</script>
+</body>
+</html>
