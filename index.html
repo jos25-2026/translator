@@ -57,7 +57,14 @@
   .status { color: var(--muted); font-size: .9rem; min-height: 1.4em; margin: 0 4px 8px; }
   .status.error { color: var(--error); }
   .count { color: var(--muted); font-size: .85rem; margin-right: auto; align-self: center; }
-  h2 { font-size: 1.2rem; margin: 28px 0 6px; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--soft); padding: 4px; border-radius: 14px; margin-bottom: 14px; }
+  .tab { border: none; background: transparent; font-weight: 600; padding: 10px; }
+  .tab.active { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.12); color: var(--accent); }
+  [hidden] { display: none !important; }
+  .log-head { display: flex; justify-content: space-between; align-items: center; margin: 6px 4px 8px; color: var(--muted); font-size: .95rem; }
+  .log-head button { padding: 6px 12px; font-size: .9rem; }
+  .settings { display: flex; align-items: center; gap: 10px; margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: .95rem; }
+  .settings select { flex: none; width: auto; padding: 6px 10px; }
   .hint { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
   .convo-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
   .convo-controls select { grid-column: 1 / -1; }
@@ -85,6 +92,28 @@
 <main>
   <h1>แปลภาษา</h1>
 
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="convo">🎧 สนทนา</button>
+    <button class="tab" role="tab" data-tab="typed">⌨️ พิมพ์แปล</button>
+  </div>
+
+  <section id="panel-convo">
+  <p class="hint">วางมือถือให้ใกล้คู่สนทนา ใส่หูฟังบลูทูธ แล้วกด "เริ่มฟัง" แอพจะฟังต่อเนื่อง แปลเป็นไทย และอ่านออกเสียงเข้าหูฟังให้อัตโนมัติ</p>
+  <div class="convo-controls">
+    <select id="otherLang" aria-label="ภาษาคู่สนทนา"></select>
+    <button class="big" id="listenBtn">▶ เริ่มฟัง</button>
+    <button class="big" id="meBtn">🎤 ฉันพูด (ไทย)</button>
+  </div>
+  <label class="opt"><input type="checkbox" id="earbuds" checked> ใส่หูฟังอยู่ (ฟังต่อได้ระหว่างอ่านคำแปล)</label>
+  <div class="live" id="live"></div>
+  <div class="log-head" id="logHead" hidden>
+    <span>ประวัติสนทนา</span>
+    <button id="clearLog">🗑 ลบประวัติ</button>
+  </div>
+  <div class="log" id="log"></div>
+  </section>
+
+  <section id="panel-typed" hidden>
   <div class="langs">
     <select id="from" aria-label="ภาษาต้นทาง"></select>
     <button class="swap" id="swap" title="สลับภาษา" aria-label="สลับภาษา">⇄</button>
@@ -111,16 +140,17 @@
     </div>
   </div>
 
-  <h2>โหมดสนทนา</h2>
-  <p class="hint">วางมือถือหันไมค์ไปทางคู่สนทนา ใส่หูฟังบลูทูธ แล้วกด "เริ่มฟัง" แอพจะฟังต่อเนื่อง แปลเป็นไทย และอ่านออกเสียงเข้าหูฟังให้อัตโนมัติ</p>
-  <div class="convo-controls">
-    <select id="otherLang" aria-label="ภาษาคู่สนทนา"></select>
-    <button class="big" id="listenBtn">▶ เริ่มฟัง</button>
-    <button class="big" id="meBtn">🎤 ฉันพูด (ไทย)</button>
+  </section>
+
+  <div class="settings">
+    <label for="rate">ความเร็วเสียงอ่าน</label>
+    <select id="rate">
+      <option value="0.75">ช้า</option>
+      <option value="1">ปกติ</option>
+      <option value="1.25">เร็ว</option>
+      <option value="1.5">เร็วมาก</option>
+    </select>
   </div>
-  <label class="opt"><input type="checkbox" id="earbuds" checked> ใส่หูฟังอยู่ (ฟังต่อได้ระหว่างอ่านคำแปล)</label>
-  <div class="live" id="live"></div>
-  <div class="log" id="log"></div>
 </main>
 <div class="showbig" id="showbig" role="dialog"><div id="showbigText"></div><small>แตะเพื่อปิด</small></div>
 
@@ -222,6 +252,10 @@ async function translate() {
 // 1st choice: Google's free voice as an audio file (works the same on every phone, no voice install needed).
 // Fallback: the voices built into the device/browser.
 const player = new Audio();
+const rateSel = $("rate");
+rateSel.value = ["0.75", "1", "1.25", "1.5"].includes(load("rate")) ? load("rate") : "1";
+rateSel.onchange = () => store("rate", rateSel.value);
+const speechRate = () => parseFloat(rateSel.value) || 1;
 let speakToken = 0;
 let stopCurrent = null;
 
@@ -251,6 +285,7 @@ function speakWithGoogle(text, lang, token) {
       if (i >= parts.length) { setStatus(""); return resolve(); }
       player.src = "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob"
         + "&tl=" + LANGS[lang].google + "&q=" + encodeURIComponent(parts[i++]);
+      player.playbackRate = speechRate();
       player.play().then(() => { started = true; }).catch((e) => { if (!started) reject(e); });
     };
     player.onended = next;
@@ -270,7 +305,7 @@ function speakWithDevice(text, lang) {
     const voice = voices.find((v) => v.lang.replace("_", "-") === tag)
       || voices.find((v) => v.lang.toLowerCase().startsWith(lang));
     if (voice) u.voice = voice;
-    u.rate = 0.95;
+    u.rate = 0.95 * speechRate();
     u.onstart = () => setStatus("");
     u.onend = () => resolve();
     u.onerror = () => {
@@ -353,6 +388,7 @@ function flush(s) {
   s.sent = s.combined.length;
   if (!text) return;
   queue.push({ text, lang: s.lang, isMe: s.isMe });
+  setLive(autoOn ? "กำลังฟังคู่สนทนา..." : "");
   if (s.isMe) { meMode = false; updateButtons(); if (sess === s) restartRec(); }
   processQueue();
 }
@@ -369,6 +405,7 @@ function addEntry(isMe, orig, tr) {
   div.append(who, o, t);
   div.onclick = () => speak(tr, isMe ? otherSel.value : "th", true);
   $("log").prepend(div);
+  $("logHead").hidden = false;
 }
 
 function showBig(text) { $("showbigText").textContent = text; $("showbig").classList.add("open"); }
@@ -473,6 +510,26 @@ meBtn.onclick = () => {
   if (micPaused()) return;
   restartRec();
   if (!meMode && !autoOn) setLive("");
+};
+
+// ---------- Tabs ----------
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on);
+  });
+  $("panel-convo").hidden = name !== "convo";
+  $("panel-typed").hidden = name !== "typed";
+  store("tab", name);
+}
+document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
+showTab(load("tab") === "typed" ? "typed" : "convo");
+
+$("clearLog").onclick = () => {
+  if (!confirm("ลบประวัติสนทนาทั้งหมด?")) return;
+  $("log").innerHTML = "";
+  $("logHead").hidden = true;
 };
 </script>
 </body>
