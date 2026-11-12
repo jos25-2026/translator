@@ -63,6 +63,8 @@
   .convo-controls select { grid-column: 1 / -1; }
   .big { font-weight: 600; padding: 16px 10px; }
   .listening { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .opt { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: .95rem; margin: 4px 4px 0; }
+  .opt input { width: 20px; height: 20px; }
   .live { min-height: 1.5em; color: var(--muted); font-style: italic; margin: 4px 4px 10px; }
   .log { display: flex; flex-direction: column; gap: 8px; }
   .entry { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
@@ -116,6 +118,7 @@
     <button class="big" id="listenBtn">▶ เริ่มฟัง</button>
     <button class="big" id="meBtn">🎤 ฉันพูด (ไทย)</button>
   </div>
+  <label class="opt"><input type="checkbox" id="earbuds" checked> ใส่หูฟังอยู่ (ฟังต่อได้ระหว่างอ่านคำแปล)</label>
   <div class="live" id="live"></div>
   <div class="log" id="log"></div>
 </main>
@@ -329,9 +332,30 @@ otherSel.onchange = () => { store("other", otherSel.value); if (autoOn) restartR
 
 let autoOn = false;      // continuous listening to the other person
 let meMode = false;      // currently recording my Thai speech
-let busy = false;        // translating/speaking; mic paused so it doesn't hear our own voice
+let busy = false;        // translating/speaking the queue
 let rec = null;
 const queue = [];
+const earbudsBox = $("earbuds");
+earbudsBox.checked = load("earbuds") !== "0";
+earbudsBox.onchange = () => store("earbuds", earbudsBox.checked ? "1" : "0");
+// With earbuds the mic can't hear the translation, so keep listening while it plays.
+const keepListening = () => earbudsBox.checked;
+
+// Per listening session: collect finished pieces and wait for a pause before translating,
+// so a long sentence is translated as one piece instead of word by word.
+let sess = null;
+function newSession(lang, isMe) { return { lang, isMe, combined: "", sent: 0, timer: null }; }
+
+function flush(s) {
+  if (!s) return;
+  clearTimeout(s.timer);
+  const text = s.combined.slice(s.sent).trim();
+  s.sent = s.combined.length;
+  if (!text) return;
+  queue.push({ text, lang: s.lang, isMe: s.isMe });
+  if (s.isMe) { meMode = false; updateButtons(); if (sess === s) restartRec(); }
+  processQueue();
+}
 
 function setLive(t) { live.textContent = t || ""; }
 
@@ -352,25 +376,41 @@ $("showbig").onclick = () => $("showbig").classList.remove("open");
 
 function stopRec() {
   if (rec) { rec.onend = null; rec.onresult = null; rec.onerror = null; try { rec.abort(); } catch (e) {} rec = null; }
+  if (sess) { flush(sess); sess = null; }
 }
+
+const micPaused = () => busy && !keepListening();
 
 function startRec() {
   stopRec();
-  if (busy || (!autoOn && !meMode)) return;
+  if (micPaused() || (!autoOn && !meMode)) return;
   const r = new SR();
   const lang = meMode ? "th" : otherSel.value;
+  const s = newSession(lang, meMode);
+  sess = s;
   r.lang = REC_LANG[lang];
-  r.continuous = !meMode;
+  r.continuous = true;
   r.interimResults = true;
   r.onresult = (e) => {
+    const finals = [];
     let interim = "";
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const res = e.results[i];
-      if (res.isFinal) { const t = res[0].transcript.trim(); if (t) queue.push({ text: t, lang, isMe: meMode }); }
-      else interim += res[0].transcript;
+    for (let i = 0; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript.trim();
+      if (!t) continue;
+      if (e.results[i].isFinal) {
+        // Some Android phones repeat earlier words in each result; keep only the longest version.
+        const last = finals[finals.length - 1];
+        if (last && t.startsWith(last)) finals[finals.length - 1] = t;
+        else if (!(last && last.startsWith(t))) finals.push(t);
+      } else interim += " " + t;
     }
-    setLive(interim ? "กำลังฟัง: " + interim : "");
-    if (queue.length) processQueue();
+    s.combined = finals.join(" ");
+    if (s.sent > s.combined.length) s.sent = s.combined.length;
+    const pending = (s.combined.slice(s.sent) + interim).trim();
+    setLive(pending ? "กำลังฟัง: " + pending : "");
+    clearTimeout(s.timer);
+    if (s.combined.length - s.sent > 300) flush(s);
+    else s.timer = setTimeout(() => flush(s), s.isMe ? 1200 : 1600);
   };
   r.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
@@ -379,10 +419,10 @@ function startRec() {
     }
   };
   r.onend = () => {
-    rec = null;
-    if (meMode && !queue.length && !busy) { meMode = false; updateButtons(); setLive(""); }
+    if (rec === r) rec = null;
+    if (sess === s) { flush(s); sess = null; }
     // Phones stop listening after a pause; start again automatically.
-    if (!busy && (autoOn || meMode)) setTimeout(startRec, 250);
+    if (!rec && !micPaused() && (autoOn || meMode)) setTimeout(() => { if (!rec) startRec(); }, 250);
   };
   rec = r;
   try { r.start(); setLive(meMode ? "พูดภาษาไทยได้เลย..." : "กำลังฟังคู่สนทนา..."); }
@@ -393,26 +433,22 @@ function restartRec() { stopRec(); startRec(); }
 async function processQueue() {
   if (busy) return;
   busy = true;
-  stopRec();
+  if (!keepListening()) stopRec();
   while (queue.length) {
     const item = queue.shift();
     const to = item.isMe ? otherSel.value : "th";
-    setLive("กำลังแปล...");
     try {
       const tr = await translateText(item.text, item.lang, to);
       addEntry(item.isMe, item.text, tr);
-      if (item.isMe) { showBig(tr); meMode = false; updateButtons(); }
-      setLive("กำลังพูดคำแปล...");
+      if (item.isMe) showBig(tr);
       await speak(tr, to, true);
     } catch (e) {
-      if (item.isMe) { meMode = false; updateButtons(); }
       setLive("แปลไม่สำเร็จ ตรวจสอบอินเทอร์เน็ต");
       await new Promise((r) => setTimeout(r, 1500));
     }
   }
   busy = false;
-  setLive("");
-  startRec();
+  if (!rec) startRec();
 }
 
 function updateButtons() {
@@ -434,7 +470,7 @@ listenBtn.onclick = () => {
 meBtn.onclick = () => {
   meMode = !meMode;
   updateButtons();
-  if (busy) return;
+  if (micPaused()) return;
   restartRec();
   if (!meMode && !autoOn) setLive("");
 };
